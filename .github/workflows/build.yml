@@ -280,8 +280,8 @@ jobs:
                           override fun onStarted(res: WifiManager.LocalOnlyHotspotReservation) {
                               reservation = res
                               val config = res.wifiConfiguration
-                              val ssid = config.SSID
-                              val pass = config.preSharedKey ?: ""
+                              val ssid = config?.SSID ?: ""
+                              val pass = config?.preSharedKey ?: ""
                               val qrText = "WIFI:T:WPA;S:$ssid;P:$pass;;"
                               runOnUiThread {
                                   findViewById<TextView>(R.id.tvInfo).text = "SSID: $ssid\nPassword: $pass"
