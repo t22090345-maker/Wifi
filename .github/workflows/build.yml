@@ -19,8 +19,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # FIX: android-actions/setup-android@v3 ki jagah manual setup
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          if [ -z "$ANDROID_HOME" ]; then
+            export ANDROID_HOME=/usr/local/lib/android/sdk
+          fi
+          export SDK_MANAGER=$(find $ANDROID_HOME/cmdline-tools -name sdkmanager | head -n 1)
+          echo "Using sdkmanager at: $SDK_MANAGER"
+          yes | $SDK_MANAGER --licenses || true
+          $SDK_MANAGER "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
