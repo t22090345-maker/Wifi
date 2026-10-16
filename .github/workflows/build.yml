@@ -1,0 +1,453 @@
+name: Build HotspotQR APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.2'
+
+      - name: Create project files
+        run: |
+          mkdir -p app/src/main/java/com/example/hotspotqr
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "HotspotQR"
+          include ':app'
+          EOF
+
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.1.4' apply false
+              id 'org.jetbrains.kotlin.android' version '1.9.0' apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2048m
+          android.useAndroidX=true
+          kotlin.code.style=official
+          android.nonTransitiveRClass=true
+          EOF
+
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+              id 'org.jetbrains.kotlin.android'
+          }
+
+          android {
+              namespace 'com.example.hotspotqr'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.example.hotspotqr"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = '17'
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.core:core-ktx:1.12.0'
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+              implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+              implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+              implementation 'com.google.zxing:core:3.5.2'
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+              <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+              <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
+              <uses-permission android:name="android.permission.CAMERA" />
+              <uses-permission android:name="android.permission.INTERNET" />
+
+              <uses-feature android:name="android.hardware.camera" android:required="false" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="HotspotQR"
+                  android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <activity android:name=".HotspotActivity" android:exported="false" />
+                  <activity android:name=".ScanActivity" android:exported="false" />
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources>
+              <string name="app_name">HotspotQR</string>
+          </resources>
+          EOF
+
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:gravity="center"
+              android:orientation="vertical"
+              android:padding="24dp">
+
+              <Button
+                  android:id="@+id/btnStart"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="Start"
+                  android:textSize="18sp" />
+          </LinearLayout>
+          EOF
+
+          cat > app/src/main/res/layout/activity_hotspot.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:gravity="center"
+              android:orientation="vertical"
+              android:padding="16dp">
+
+              <TextView
+                  android:id="@+id/tvInfo"
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="Starting hotspot..."
+                  android:textSize="16sp" />
+
+              <ImageView
+                  android:id="@+id/ivQr"
+                  android:layout_width="300dp"
+                  android:layout_height="300dp"
+                  android:layout_marginTop="24dp" />
+          </LinearLayout>
+          EOF
+
+          cat > app/src/main/res/layout/activity_scan.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent"
+              android:gravity="center"
+              android:orientation="vertical">
+
+              <TextView
+                  android:layout_width="wrap_content"
+                  android:layout_height="wrap_content"
+                  android:text="Opening camera..." />
+          </LinearLayout>
+          EOF
+
+          cat > app/src/main/java/com/example/hotspotqr/MainActivity.kt <<'EOF'
+          package com.example.hotspotqr
+
+          import android.content.Intent
+          import android.os.Bundle
+          import android.widget.Button
+          import androidx.appcompat.app.AlertDialog
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  findViewById<Button>(R.id.btnStart).setOnClickListener {
+                      val options = arrayOf("Hotspot (Share)", "WiFi (Scan QR)")
+                      AlertDialog.Builder(this)
+                          .setTitle("Choose Mode")
+                          .setItems(options) { _, which ->
+                              if (which == 0) {
+                                  startActivity(Intent(this, HotspotActivity::class.java))
+                              } else {
+                                  startActivity(Intent(this, ScanActivity::class.java))
+                              }
+                          }
+                          .show()
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/example/hotspotqr/HotspotActivity.kt <<'EOF'
+          package com.example.hotspotqr
+
+          import android.content.Context
+          import android.graphics.Bitmap
+          import android.net.wifi.WifiManager
+          import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
+          import android.widget.ImageView
+          import android.widget.TextView
+          import android.widget.Toast
+          import androidx.appcompat.app.AppCompatActivity
+          import com.google.zxing.BarcodeFormat
+          import com.google.zxing.MultiFormatWriter
+          import com.google.zxing.common.BitMatrix
+
+          class HotspotActivity : AppCompatActivity() {
+
+              private lateinit var wifiManager: WifiManager
+              private var reservation: WifiManager.LocalOnlyHotspotReservation? = null
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_hotspot)
+
+                  wifiManager = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                  startHotspot()
+              }
+
+              private fun startHotspot() {
+                  try {
+                      wifiManager.startLocalOnlyHotspot(object : WifiManager.LocalOnlyHotspotCallback() {
+                          override fun onStarted(res: WifiManager.LocalOnlyHotspotReservation) {
+                              reservation = res
+                              val config = res.wifiConfiguration
+                              val ssid = config.SSID
+                              val pass = config.preSharedKey ?: ""
+                              val qrText = "WIFI:T:WPA;S:$ssid;P:$pass;;"
+                              runOnUiThread {
+                                  findViewById<TextView>(R.id.tvInfo).text = "SSID: $ssid\nPassword: $pass"
+                                  findViewById<ImageView>(R.id.ivQr).setImageBitmap(generateQr(qrText, 800))
+                              }
+                          }
+
+                          override fun onFailed(reason: Int) {
+                              runOnUiThread {
+                                  Toast.makeText(this@HotspotActivity, "Failed: $reason", Toast.LENGTH_LONG).show()
+                              }
+                          }
+
+                          override fun onStopped() {
+                              runOnUiThread {
+                                  Toast.makeText(this@HotspotActivity, "Stopped", Toast.LENGTH_SHORT).show()
+                              }
+                          }
+                      }, Handler(Looper.getMainLooper()))
+                  } catch (e: Exception) {
+                      Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                  }
+              }
+
+              private fun generateQr(text: String, size: Int): Bitmap {
+                  val bits: BitMatrix = MultiFormatWriter()
+                      .encode(text, BarcodeFormat.QR_CODE, size, size)
+                  val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.RGB_565)
+                  for (x in 0 until size) {
+                      for (y in 0 until size) {
+                          bmp.setPixel(x, y, if (bits[x, y]) 0xFF000000.toInt() else 0xFFFFFFFF.toInt())
+                      }
+                  }
+                  return bmp
+              }
+
+              override fun onDestroy() {
+                  super.onDestroy()
+                  reservation?.close()
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/example/hotspotqr/ScanActivity.kt <<'EOF'
+          package com.example.hotspotqr
+
+          import android.Manifest
+          import android.content.Context
+          import android.content.pm.PackageManager
+          import android.net.ConnectivityManager
+          import android.net.Network
+          import android.net.NetworkRequest
+          import android.net.wifi.WifiConfiguration
+          import android.net.wifi.WifiManager
+          import android.net.wifi.WifiNetworkSpecifier
+          import android.os.Build
+          import android.os.Bundle
+          import android.widget.Toast
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.appcompat.app.AppCompatActivity
+          import androidx.core.content.ContextCompat
+          import com.journeyapps.barcodescanner.ScanContract
+          import com.journeyapps.barcodescanner.ScanOptions
+
+          class ScanActivity : AppCompatActivity() {
+
+              private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
+                  if (result.contents != null) {
+                      handleScanned(result.contents)
+                  } else {
+                      Toast.makeText(this, "Scan cancelled", Toast.LENGTH_SHORT).show()
+                      finish()
+                  }
+              }
+
+              private val cameraPermLauncher = registerForActivityResult(
+                  ActivityResultContracts.RequestPermission()
+              ) { granted ->
+                  if (granted) launchScanner() else {
+                      Toast.makeText(this, "Camera permission required", Toast.LENGTH_LONG).show()
+                      finish()
+                  }
+              }
+
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_scan)
+
+                  if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                      == PackageManager.PERMISSION_GRANTED) {
+                      launchScanner()
+                  } else {
+                      cameraPermLauncher.launch(Manifest.permission.CAMERA)
+                  }
+              }
+
+              private fun launchScanner() {
+                  val options = ScanOptions()
+                  options.setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                  options.setPrompt("Scan Hotspot QR")
+                  options.setBeepEnabled(false)
+                  options.setOrientationLocked(false)
+                  scanLauncher.launch(options)
+              }
+
+              private fun handleScanned(data: String) {
+                  if (!data.startsWith("WIFI:")) {
+                      Toast.makeText(this, "Not a WiFi QR", Toast.LENGTH_LONG).show()
+                      finish()
+                      return
+                  }
+                  val ssid = Regex("S:([^;]*)").find(data)?.groupValues?.get(1) ?: ""
+                  val pass = Regex("P:([^;]*)").find(data)?.groupValues?.get(1) ?: ""
+                  connectToWifi(ssid, pass)
+              }
+
+              private fun connectToWifi(ssid: String, password: String) {
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                      val specifier = WifiNetworkSpecifier.Builder()
+                          .setSsid(ssid)
+                          .setWpa2Passphrase(password)
+                          .build()
+
+                      val request = NetworkRequest.Builder()
+                          .addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                          .removeCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                          .setNetworkSpecifier(specifier)
+                          .build()
+
+                      val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+                      cm.requestNetwork(request, object : ConnectivityManager.NetworkCallback() {
+                          override fun onAvailable(network: Network) {
+                              cm.bindProcessToNetwork(network)
+                              runOnUiThread {
+                                  Toast.makeText(this@ScanActivity,
+                                      "Connected to $ssid", Toast.LENGTH_LONG).show()
+                              }
+                          }
+
+                          override fun onUnavailable() {
+                              runOnUiThread {
+                                  Toast.makeText(this@ScanActivity,
+                                      "Failed to connect", Toast.LENGTH_LONG).show()
+                                  finish()
+                              }
+                          }
+                      })
+                  } else {
+                      @Suppress("DEPRECATION")
+                      val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as WifiManager
+                      @Suppress("DEPRECATION")
+                      val conf = WifiConfiguration().apply {
+                          SSID = "\"$ssid\""
+                          preSharedKey = "\"$password\""
+                      }
+                      @Suppress("DEPRECATION")
+                      val id = wm.addNetwork(conf)
+                      @Suppress("DEPRECATION")
+                      wm.disconnect()
+                      @Suppress("DEPRECATION")
+                      wm.enableNetwork(id, true)
+                      @Suppress("DEPRECATION")
+                      wm.reconnect()
+                  }
+              }
+          }
+          EOF
+
+      - name: Build Debug APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HotspotQR-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
